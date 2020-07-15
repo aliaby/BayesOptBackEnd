@@ -14,6 +14,13 @@ import copy
 import timeit
 
 __measure_time__ = True
+__USE_CPP_BACKEND__ = True
+
+if __USE_CPP_BACKEND__:
+    try:
+        import BayesOptimizer_wrapper
+    except:
+        __USE_CPP_BACKEND__ = False
 
 class BayesWrapper(object):
 
@@ -140,27 +147,28 @@ class BayesianTuner(Tuner):
         self.ys = []
         self.flops_max = 0.0
         self.training_epoch = 0
+
         if data is not None:
             self.xs = data[0]
             self.ys = data[1]
         self.index_map = None
+
         if __measure_time__:
             start = timeit.default_timer()
         self._reset_pool()
         ### Minimize index map size
         self.index_map = []
-        # if np.prod(self.space_len) > 2**24:
-        #     indices = np.random.choice(np.prod(self.space_len), 2**24, replace=False)
-        # else:
         indices = np.arange(np.prod(self.space_len))
+        if not __USE_CPP_BACKEND__:
+            self.index_map = self.pool.map(_get_config, indices)
 
-        self.index_map = self.pool.map(_get_config, indices)
-        # self.index_map = np.asarray([np.asarray(self.space.get(index).get_flatten_feature(), dtype='int16') for index in np.arange(np.prod(self.space_len))])
+        else:
+            self.bayesian_optimizer.set_map(self.space.space_map)
+
         if __measure_time__:
             stop = timeit.default_timer()
             print('Time: ', stop - start)
 
-        # self.bayesian_optimizer.reset()
 
     def next_batch(self, batch_size):
         ret = []
@@ -203,11 +211,14 @@ class BayesianTuner(Tuner):
 
         xs_configurations = []
         update_size = len(self.xs)
-        for x in self.xs[-min(len(self.xs),update_size):]:
-            if len(self.index_map) == np.prod(self.space_len):
-                xs_configurations.append(copy.copy(self.index_map[x]))
-            else:
-                xs_configurations.append(np.asarray(self.space.get(x).get_flatten_feature()))
+        if __USE_CPP_BACKEND__:
+            xs_configurations = self.xs
+        else:
+            for x in self.xs[-min(len(self.xs),update_size):]:
+                if len(self.index_map) == np.prod(self.space_len):
+                    xs_configurations.append(copy.copy(self.index_map[x]))
+                else:
+                    xs_configurations.append(np.asarray(self.space.get(x).get_flatten_feature()))
 
         if len(self.xs) >= self.training_intervals * (self.training_epoch + 1) \
                 and self.flops_max > 1e-6:
@@ -240,7 +251,7 @@ class BayesianTuner(Tuner):
 
 class BayesianOptimizer(object):
     def __init__(self, run_multi_threaded=False):
-        self.regressor = GaussianProcessRegressor(copy_X_train=False,normalize_y=True)
+
         if run_multi_threaded:
             self.num_threads = multiprocessing.cpu_count()
             self.pool = multiprocessing.Pool(self.num_threads)
@@ -251,6 +262,15 @@ class BayesianOptimizer(object):
         self.max_test_points = 2**20 * self.num_threads
         self.random_points = 0.3
         self.decay = 0.95
+
+        if __USE_CPP_BACKEND__:
+            self.regressor = None
+        else:
+            self.regressor = GaussianProcessRegressor(copy_X_train=False, normalize_y=True)
+
+    def set_map(self, space_map):
+        self.regressor = BayesOptimizer_wrapper.PyBayesOptimizer(extract_map_from_config(space_map))
+
 
     def reset(self):
         self.regressor = None
@@ -271,7 +291,11 @@ class BayesianOptimizer(object):
             self.pool = multiprocessing.Pool(self.num_threads)
 
     def fit(self, xs, ys):
-        ys = np.reshape(ys, (len(ys), 1))
+        if __USE_CPP_BACKEND__:
+            norm = np.linalg.norm(ys)
+            ys = ys / norm
+        else:
+            ys = np.reshape(ys, (len(ys), 1))
         self.regressor.fit(xs, ys)
 
 
@@ -280,10 +304,18 @@ class BayesianOptimizer(object):
         return predicates
 
     def next_batch(self, visited, visited_indexes, batch_size, test_points):
-        self._reset_pool(visited)
-
         if __measure_time__:
             start = timeit.default_timer()
+
+        if __USE_CPP_BACKEND__:
+            maximums = self.regressor.next_batch(batch_size, visited_indexes)
+            if __measure_time__:
+                stop = timeit.default_timer()
+                print('Time-find maximas: ', stop - start)
+                print("Visited points so far {}, points to be tested {}".format(len(visited_indexes), len(test_points)))
+            return maximums
+
+        self._reset_pool(visited)
 
         local_maximums = []
         for i in range(len(test_points) // (self.max_test_points) + 1):

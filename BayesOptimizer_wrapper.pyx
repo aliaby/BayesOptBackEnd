@@ -15,12 +15,23 @@ cdef extern from "BayesOptimizer.hpp" namespace "BayesianOptimization":
         int space_length
         void build_search_space()
         void print_space()
+        void fit(vector[int], vector[double])
+        vector[int] next_batch(int batch_size, vector[int] visited)
 
 cdef class PyBayesOptimizer:
     cdef BayesOptimizer *thisptr      # hold a C++ instance which we're wrapping
+
     def __cinit__(self, map[string, vector[vector[int16_t]]] s):
         self.thisptr = new BayesOptimizer(s)
+
     def __dealloc__(self):
         del self.thisptr
+
     def print_space(self):
         self.thisptr.print_space()
+
+    def fit(self, vector[int] xs, vector[double] ys):
+      self.thisptr.fit(xs, ys)
+
+    def next_batch(self, int batch_size, vector[int] visited):
+      return self.thisptr.next_batch(batch_size, visited)

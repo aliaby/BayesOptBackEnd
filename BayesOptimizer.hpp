@@ -23,15 +23,19 @@ namespace BayesianOptimization
       BayesOptimizer(std::map<std::string, std::vector< std::vector<int16_t> > > _space);
       ~BayesOptimizer();
       void print_space();
+      void fit(std::vector<int> xs, std::vector<double> ys);
+      std::vector<int> next_batch(int batch_size, std::vector<int> visited);
 
   private:
 	  std::map<std::string, std::vector< std::vector<int16_t> > > config_space;
 	  // std::vector<std::vector<std::vector<int16_t> > > search_space;
     std::vector<Eigen::VectorXd> search_space;
 
-	  unsigned space_length = 1;
+    unsigned space_length = 1;
     unsigned feature_length = 0;
-	  void build_search_space();
+    double best = 0;
+
+
     struct Params {
       struct kernel_exp {
           BO_PARAM(double, sigma_sq, 1.0);
@@ -49,6 +53,7 @@ namespace BayesianOptimization
       GP_t* gp;
 
 
+  	  void build_search_space();
     // std::vector<int> d_index_space(std::vector<std::vector<std::vector<int16_t> > > space);
   };
 }
