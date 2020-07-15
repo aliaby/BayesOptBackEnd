@@ -17,6 +17,8 @@ namespace BayesianOptimization
   {
     this->config_space = _space;
     this->build_search_space();
+    this->gp = new GP_t(this->feature_length, 1);
+    std::cout << this->search_space[100000] << std::endl;
   }
 
   void BayesOptimizer::print_space(){
@@ -26,9 +28,9 @@ namespace BayesianOptimization
   }
 
   BayesOptimizer::~BayesOptimizer(){
-    for (std::vector<std::vector<int16_t> >::iterator it = this->search_space.begin(); it != this->search_space.end(); ++it) {
-      (&(*it))->clear();
-    }
+    // for (std::vector<std::vector<int16_t> >::iterator it = this->search_space.begin(); it != this->search_space.end(); ++it) {
+    //   (&(*it))->clear();
+    // }
     this->search_space.clear();
     this->config_space.clear();
   }
@@ -69,7 +71,6 @@ namespace BayesianOptimization
   // }
 
   void BayesOptimizer::build_search_space(){
-
     std::vector<int16_t> dims;
     #ifdef DEBUG0
       std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
@@ -79,6 +80,7 @@ namespace BayesianOptimization
     {
       this->space_length *= pair.second.size();
       dims.push_back(pair.second.size());
+      this->feature_length += pair.second[0].size();
     }
     #ifdef DEBUG0
       std::cout<<(this->space_length) << std::endl;
@@ -87,16 +89,19 @@ namespace BayesianOptimization
     for (unsigned i = 0; i < this->space_length; ++i)
     {
       std::vector<int> indices;
-      std::vector<int16_t> config;
       int index = i;
       for(std::vector<int16_t>::iterator it = dims.begin(); it != dims.end(); ++it){
         indices.push_back(index%(*it));
         index /= *it;
       }
       index = 0;
+      Eigen::VectorXd config(this->feature_length);
+      int ii = 0;
       for(auto const& pair: this->config_space){
-        for(auto const& it: pair.second[indices[index]])
-          config.push_back(it);
+        for(auto const& it: pair.second[indices[index]]){
+          config[ii] = it;
+          ii++;
+        }
         index++;
       }
       this->search_space.push_back(config);

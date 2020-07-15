@@ -847,7 +847,7 @@ static const char *__pyx_f[] = {
 /*--- Type declarations ---*/
 struct __pyx_obj_22BayesOptimizer_wrapper_PyBayesOptimizer;
 
-/* "BayesOptimizer_wrapper.pyx":20
+/* "BayesOptimizer_wrapper.pyx":19
  *         void print_space()
  * 
  * cdef class PyBayesOptimizer:             # <<<<<<<<<<<<<<
@@ -1257,7 +1257,7 @@ static PyObject *__pyx_tuple_;
 static PyObject *__pyx_tuple__2;
 /* Late includes */
 
-/* "BayesOptimizer_wrapper.pyx":22
+/* "BayesOptimizer_wrapper.pyx":21
  * cdef class PyBayesOptimizer:
  *     cdef BayesOptimizer *thisptr      # hold a C++ instance which we're wrapping
  *     def __cinit__(self, map[string, vector[vector[int16_t]]] s):             # <<<<<<<<<<<<<<
@@ -1291,18 +1291,18 @@ static int __pyx_pw_22BayesOptimizer_wrapper_16PyBayesOptimizer_1__cinit__(PyObj
         else goto __pyx_L5_argtuple_error;
       }
       if (unlikely(kw_args > 0)) {
-        if (unlikely(__Pyx_ParseOptionalKeywords(__pyx_kwds, __pyx_pyargnames, 0, values, pos_args, "__cinit__") < 0)) __PYX_ERR(1, 22, __pyx_L3_error)
+        if (unlikely(__Pyx_ParseOptionalKeywords(__pyx_kwds, __pyx_pyargnames, 0, values, pos_args, "__cinit__") < 0)) __PYX_ERR(1, 21, __pyx_L3_error)
       }
     } else if (PyTuple_GET_SIZE(__pyx_args) != 1) {
       goto __pyx_L5_argtuple_error;
     } else {
       values[0] = PyTuple_GET_ITEM(__pyx_args, 0);
     }
-    __pyx_v_s = __pyx_convert_map_from_py_std_3a__3a_string__and_std_3a__3a_vector_3c_std_3a__3a_vector_3c_int16_t_3e____3e___(values[0]); if (unlikely(PyErr_Occurred())) __PYX_ERR(1, 22, __pyx_L3_error)
+    __pyx_v_s = __pyx_convert_map_from_py_std_3a__3a_string__and_std_3a__3a_vector_3c_std_3a__3a_vector_3c_int16_t_3e____3e___(values[0]); if (unlikely(PyErr_Occurred())) __PYX_ERR(1, 21, __pyx_L3_error)
   }
   goto __pyx_L4_argument_unpacking_done;
   __pyx_L5_argtuple_error:;
-  __Pyx_RaiseArgtupleInvalid("__cinit__", 1, 1, 1, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(1, 22, __pyx_L3_error)
+  __Pyx_RaiseArgtupleInvalid("__cinit__", 1, 1, 1, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(1, 21, __pyx_L3_error)
   __pyx_L3_error:;
   __Pyx_AddTraceback("BayesOptimizer_wrapper.PyBayesOptimizer.__cinit__", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
@@ -1320,7 +1320,7 @@ static int __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer___cinit__(struct
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("__cinit__", 0);
 
-  /* "BayesOptimizer_wrapper.pyx":23
+  /* "BayesOptimizer_wrapper.pyx":22
  *     cdef BayesOptimizer *thisptr      # hold a C++ instance which we're wrapping
  *     def __cinit__(self, map[string, vector[vector[int16_t]]] s):
  *         self.thisptr = new BayesOptimizer(s)             # <<<<<<<<<<<<<<
@@ -1329,7 +1329,7 @@ static int __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer___cinit__(struct
  */
   __pyx_v_self->thisptr = new BayesianOptimization::BayesOptimizer(__pyx_v_s);
 
-  /* "BayesOptimizer_wrapper.pyx":22
+  /* "BayesOptimizer_wrapper.pyx":21
  * cdef class PyBayesOptimizer:
  *     cdef BayesOptimizer *thisptr      # hold a C++ instance which we're wrapping
  *     def __cinit__(self, map[string, vector[vector[int16_t]]] s):             # <<<<<<<<<<<<<<
@@ -1343,7 +1343,7 @@ static int __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer___cinit__(struct
   return __pyx_r;
 }
 
-/* "BayesOptimizer_wrapper.pyx":24
+/* "BayesOptimizer_wrapper.pyx":23
  *     def __cinit__(self, map[string, vector[vector[int16_t]]] s):
  *         self.thisptr = new BayesOptimizer(s)
  *     def __dealloc__(self):             # <<<<<<<<<<<<<<
@@ -1366,7 +1366,7 @@ static void __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer_2__dealloc__(st
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("__dealloc__", 0);
 
-  /* "BayesOptimizer_wrapper.pyx":25
+  /* "BayesOptimizer_wrapper.pyx":24
  *         self.thisptr = new BayesOptimizer(s)
  *     def __dealloc__(self):
  *         del self.thisptr             # <<<<<<<<<<<<<<
@@ -1375,7 +1375,7 @@ static void __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer_2__dealloc__(st
  */
   delete __pyx_v_self->thisptr;
 
-  /* "BayesOptimizer_wrapper.pyx":24
+  /* "BayesOptimizer_wrapper.pyx":23
  *     def __cinit__(self, map[string, vector[vector[int16_t]]] s):
  *         self.thisptr = new BayesOptimizer(s)
  *     def __dealloc__(self):             # <<<<<<<<<<<<<<
@@ -1387,7 +1387,7 @@ static void __pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer_2__dealloc__(st
   __Pyx_RefNannyFinishContext();
 }
 
-/* "BayesOptimizer_wrapper.pyx":26
+/* "BayesOptimizer_wrapper.pyx":25
  *     def __dealloc__(self):
  *         del self.thisptr
  *     def print_space(self):             # <<<<<<<<<<<<<<
@@ -1412,14 +1412,14 @@ static PyObject *__pyx_pf_22BayesOptimizer_wrapper_16PyBayesOptimizer_4print_spa
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("print_space", 0);
 
-  /* "BayesOptimizer_wrapper.pyx":27
+  /* "BayesOptimizer_wrapper.pyx":26
  *         del self.thisptr
  *     def print_space(self):
  *         self.thisptr.print_space()             # <<<<<<<<<<<<<<
  */
   __pyx_v_self->thisptr->print_space();
 
-  /* "BayesOptimizer_wrapper.pyx":26
+  /* "BayesOptimizer_wrapper.pyx":25
  *     def __dealloc__(self):
  *         del self.thisptr
  *     def print_space(self):             # <<<<<<<<<<<<<<
@@ -2195,15 +2195,15 @@ static int __Pyx_modinit_type_init_code(void) {
   __Pyx_RefNannyDeclarations
   __Pyx_RefNannySetupContext("__Pyx_modinit_type_init_code", 0);
   /*--- Type init code ---*/
-  if (PyType_Ready(&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 20, __pyx_L1_error)
+  if (PyType_Ready(&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 19, __pyx_L1_error)
   #if PY_VERSION_HEX < 0x030800B1
   __pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer.tp_print = 0;
   #endif
   if ((CYTHON_USE_TYPE_SLOTS && CYTHON_USE_PYTYPE_LOOKUP) && likely(!__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer.tp_dictoffset && __pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer.tp_getattro == PyObject_GenericGetAttr)) {
     __pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer.tp_getattro = __Pyx_PyObject_GenericGetAttr;
   }
-  if (PyObject_SetAttr(__pyx_m, __pyx_n_s_PyBayesOptimizer, (PyObject *)&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 20, __pyx_L1_error)
-  if (__Pyx_setup_reduce((PyObject*)&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 20, __pyx_L1_error)
+  if (PyObject_SetAttr(__pyx_m, __pyx_n_s_PyBayesOptimizer, (PyObject *)&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 19, __pyx_L1_error)
+  if (__Pyx_setup_reduce((PyObject*)&__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer) < 0) __PYX_ERR(1, 19, __pyx_L1_error)
   __pyx_ptype_22BayesOptimizer_wrapper_PyBayesOptimizer = &__pyx_type_22BayesOptimizer_wrapper_PyBayesOptimizer;
   __Pyx_RefNannyFinishContext();
   return 0;

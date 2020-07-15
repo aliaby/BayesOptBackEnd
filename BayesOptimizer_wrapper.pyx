@@ -12,7 +12,6 @@ cdef extern from "BayesOptimizer.hpp" namespace "BayesianOptimization":
     cdef cppclass BayesOptimizer:
         BayesOptimizer(map[string, vector[vector[int16_t]]])
         map[string, vector[int16_t]] config_space
-        vector[vector[vector[int16_t]]] search_space
         int space_length
         void build_search_space()
         void print_space()
