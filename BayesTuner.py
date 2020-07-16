@@ -14,12 +14,23 @@ import copy
 import timeit
 
 __measure_time__ = True
-__USE_CPP_BACKEND__ = True
+__USE_CPP_BACKEND__ = False
+__REGRESSOR_LIB__ = "GPY"
+
+if __REGRESSOR_LIB__ == "GPY":
+    try:
+        import GPy
+        x = GPy.models.GPRegression()
+    except:
+        print("importing GPY failed...")
+
 
 if __USE_CPP_BACKEND__:
     try:
         import BayesOptimizer_wrapper
+        print("Using C++ backend...")
     except:
+        print("Loading C++ backend failed")
         __USE_CPP_BACKEND__ = False
 
 class BayesWrapper(object):
@@ -128,8 +139,13 @@ class BayesianTuner(Tuner):
 
     def _reset_pool(self):
         self._close_pool()
-        global _config_space
+        global _config_space, _config_space_dims
         _config_space = self.space
+        _config_space_dims = []
+        for key,tile in self.space.space_map.items():
+            _config_space_dims.append(tile.num_output)
+            if _config_space_dims[-1] == 0:
+                _config_space_dims[-1] = 1
         self.pool = multiprocessing.Pool(self.num_threads)
 
     def reset(self, task, data=None, use_transfer_learning=False):
@@ -224,7 +240,7 @@ class BayesianTuner(Tuner):
                 and self.flops_max > 1e-6:
 
             self.bayesian_optimizer.fit(xs_configurations, self.ys[-min(len(self.xs),update_size):])
-            visited_map = [np.asarray(self.space.get(index).get_flatten_feature(), dtype='int16') for index in self.visited]
+            visited_map = [self.index_map[index] for index in self.visited]
             maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size = self.training_intervals, test_points=self.index_map)
             self.training_epoch += 1
             self.trials = maxes
@@ -389,6 +405,10 @@ def surrogate(x):
 
 
 _config_space = None
+_config_space_dims = None
+
+### get the fallten features of configuration space from the globaled congi space
+### seperated to be maped in a pool of threads
 
 def _get_config(index):
     def dtype(num):
@@ -401,12 +421,21 @@ def _get_config(index):
             return 'int16'
         return 'int32'
     config = _config_space.get(index).get_flatten_feature()
-    return np.asarray(config, dtype=dtype(config))
+    return np.asarray(compress_config(config))
+
+pow2 = [1, 1024, 1024*1024, 1024*1024*1024, 1024**4]
+
+def compress_config(config):
+    _config = []
+    g_index = 0
+    for index in _config_space_dims:
+        _config.append(np.sum([config[i]*pow2[i-g_index] for i in range(g_index, g_index+index)]))
+        g_index += index
+    return _config
 
 ### Input : tasks.config_space.space_map
 ### output: a sorted dict from axises to possible values for each axis - purpose is passing to cython code
 
-import collections
 def extract_map_from_config(space_map):
     ret = {}
     i = 100

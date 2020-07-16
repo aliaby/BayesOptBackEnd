@@ -16,6 +16,7 @@ cdef extern from "BayesOptimizer.hpp" namespace "BayesianOptimization":
         void build_search_space()
         void print_space()
         void fit(vector[int], vector[double])
+        
         vector[int] next_batch(int batch_size, vector[int] visited)
 
 cdef class PyBayesOptimizer:
