@@ -227,7 +227,7 @@ class BayesianTuner(Tuner):
         if __USE_CPP_BACKEND__:
             xs_configurations = self.xs
         else:
-            for x in self.xs[-min(len(self.xs),update_size):]:
+            for x in self.xs[-min(len(self.xs), update_size):]:
                 if len(self.feature_map) == np.prod(self.config_space_len):
                     xs_configurations.append(copy.copy(self.feature_map[x]))
                 else:
@@ -236,9 +236,9 @@ class BayesianTuner(Tuner):
         if len(self.xs) >= self.training_intervals * (self.training_epoch + 1) \
                 and self.flops_max > 1e-6:
 
-            self.bayesian_optimizer.fit(xs_configurations, self.ys[-min(len(self.xs),update_size):])
+            self.bayesian_optimizer.fit(xs_configurations, self.ys[-min(len(self.xs), update_size):])
             visited_map = [self.feature_map[index] for index in self.visited]
-            maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size = self.training_intervals, test_points=self.feature_map)
+            maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size=self.training_intervals, test_points=self.feature_map)
             self.training_epoch += 1
             self.trials = maxes
             self.trial_pt = 0

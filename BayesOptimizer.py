@@ -6,20 +6,22 @@ from warnings import catch_warnings
 from warnings import simplefilter
 from sklearn.gaussian_process import GaussianProcessRegressor
 import timeit
-
+from math import log2
 import threading
 import copy
 from multiprocessing import Queue, Process, Pipe, Manager
 
+import os
+mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+maximum_search_points = 2**int(log2(mem_bytes/256 - 1))
+
 __measure_time__ = True
 __USE_CPP_BACKEND__ = None
-__REGRESSOR_LIB__ = "GPY"
+__REGRESSOR_LIB__ = "SKLearn"
 
 if __REGRESSOR_LIB__ == "GPY":
     try:
         import GPy
-
-        x = GPy.models.GPRegression()
     except:
         print("importing GPY failed...")
 
@@ -35,7 +37,7 @@ if __USE_CPP_BACKEND__:
 
 class BayesianOptimizer(object):
 
-    def __init__(self, run_multi_threaded=True):
+    def __init__(self, run_multi_threaded=False):
 
         if run_multi_threaded:
             self.num_threads = multiprocessing.cpu_count()
@@ -43,7 +45,7 @@ class BayesianOptimizer(object):
             self.num_threads = 1
             self.pool = None
 
-        self.evaluation_depth = 2 ** 20 * self.num_threads
+        self.evaluation_depth = maximum_search_points * self.num_threads
         self.random_points = 0.3
         self.decay = 0.95
 
@@ -123,8 +125,12 @@ class BayesianOptimizer(object):
 
         local_maximums = []
         for i in range(len(test_points) // (self.evaluation_depth) + 1):
-
+            multi_threaded = False
             if self.num_threads > 1:
+                if min(self.num_threads, 2**21/len(test_points)) > 1:
+                    multi_threaded = True
+                    self.num_threads = min(self.num_threads, maximum_search_points/len(test_points))
+            if multi_threaded:
                 step = min(self.evaluation_depth, len(test_points[i * self.evaluation_depth:])) // self.num_threads
                 sliced_test_points = [
                     test_points[i * self.evaluation_depth + step * j:i * self.evaluation_depth + step * (j + 1)] for j
@@ -138,9 +144,7 @@ class BayesianOptimizer(object):
                 end_point = min(len(test_points), (i + 1) * self.evaluation_depth)
                 sliced_test_points = test_points[i * (self.evaluation_depth):end_point]
                 scores = acquisition(sliced_test_points)
-
                 accepted = 0
-
                 while accepted < batch_size:
                     arg_max = np.argmax(scores)
                     if arg_max + (i * (self.evaluation_depth)) not in visited_indexes:
