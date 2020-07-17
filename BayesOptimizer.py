@@ -13,7 +13,7 @@ from multiprocessing import Queue, Process, Pipe, Manager
 
 import os
 mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-maximum_search_points = 2**int(log2(mem_bytes/256 - 1))
+maximum_search_points = 2**int(log2(mem_bytes/512 - 1))
 
 __measure_time__ = True
 __USE_CPP_BACKEND__ = None
@@ -37,7 +37,7 @@ if __USE_CPP_BACKEND__:
 
 class BayesianOptimizer(object):
 
-    def __init__(self, run_multi_threaded=False):
+    def __init__(self, run_multi_threaded=True):
 
         if run_multi_threaded:
             self.num_threads = multiprocessing.cpu_count()
@@ -129,7 +129,7 @@ class BayesianOptimizer(object):
             if self.num_threads > 1:
                 if min(self.num_threads, 2**21/len(test_points)) > 1:
                     multi_threaded = True
-                    self.num_threads = min(self.num_threads, maximum_search_points/len(test_points))
+                    self.num_threads = int(min(self.num_threads, maximum_search_points/len(test_points)))
             if multi_threaded:
                 step = min(self.evaluation_depth, len(test_points[i * self.evaluation_depth:])) // self.num_threads
                 sliced_test_points = [
