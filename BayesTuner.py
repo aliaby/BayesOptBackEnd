@@ -15,9 +15,13 @@ import multiprocessing
 
 ### The following macros are used to determine the structure of the system
 
+## measure time is used for performance analysis
+
 __measure_time__ = True
 global __USE_CPP_BACKEND__
 __USE_CPP_BACKEND__ = False
+
+### when feature copression is enabled, we require, features space needs less memory.
 __compress_features__ = True
 
 
@@ -30,7 +34,43 @@ if __USE_CPP_BACKEND__:
         __USE_CPP_BACKEND__ = False
 
 class BayesWrapper(object):
+    """
+    The upper level class for Bayesian optimization tunner.
+    Recieves a set of tasks with a set of tunning options, optimizes those tasks, stores the best results in a log file.
 
+
+    Parameters
+    ----------
+    n_trial: number of trials for each tasks, this number refers to
+             how many different configurations are tested on real hardware.
+
+    log_filename: the file in which we store best results
+
+    early_stopping: threshold for stopping the search earlier than N-trials
+
+    use_transfer_learning: True/False, determines whether we will use TL or not.
+
+    Attributes
+    -----------
+    tunner: A bayesian tunner, see the class inside BayesianOptimizer.py
+
+    best_results: best observation for each task, used in determining the variance of
+                  performance between tasks which is usefull in setting a variable number
+                  for #traials in each task.
+
+    sampling_points: keep track of tested points for every task
+
+    stop_threshold: determines the maximum allowed variance among tasks performance
+                    for stopping the algorithm.
+
+    measure_option, callbacks: used inside the tuner class
+
+
+    Fields
+    ----------------------------------------------
+    tasks
+
+    """
     def __init__(self,
                  tasks,
                   measure_option,
@@ -48,6 +88,7 @@ class BayesWrapper(object):
         self.log_filename = log_filename
         self.early_stopping = early_stopping
         self.use_transfer_laerning = use_transfer_learning
+
         self.tunner = BayesianTuner()
         self.best_results = np.zeros(len(tasks))
         self.sampling_points = []
@@ -56,10 +97,18 @@ class BayesWrapper(object):
         self.call_back = call_back
 
     def tune(self):
+        """
+        iterates over tasks, tunes each one, store the result.
+
+        :return:
+
+        """
+
         ### init the environment...
         tmp_log_file = self.log_filename + ".tmp"
         if os.path.exists(tmp_log_file):
             os.remove(tmp_log_file)
+
         ### set the tunning budget
         budget = self.n_trials*len(self.tasks)
         for i, task in enumerate(reversed(self.tasks)):
@@ -72,23 +121,6 @@ class BayesWrapper(object):
                                                                     )
             self.sampling_points.append(samples)
             budget -= trials
-
-        ### second runs
-        # while np.max(self.best_results) - np.min(self.best_results) > self.stop_threshold \
-        #     and budget > 0:
-        #
-        #     task, index = self.tasks[np.argmin(self.best_results)], np.argmin(self.best_results)
-        #     prefix = "[Task %2d/%2d] " % (index + 1, len(self.tasks))
-        #     self.tunner.reset(task, use_transfer_learning=self.use_transfer_laerning, data=self.sampling_points[index])
-        #     new_result, samples, trials = self.tunner.tune(n_trial=self.n_trials,
-        #                                                              measure_option=self.measure_option,
-        #                                                              callbacks=[autotvm.callback.progress_bar(self.n_trials, prefix=prefix),
-        #                                                                         autotvm.callback.log_to_file(tmp_log_file)]
-        #                                                             )
-        #     self.best_results[index] = max(self.best_results[index], new_result)
-        #     self.sampling_points[index].append(samples)
-        #
-        #     budget -= trials
 
         autotvm.record.pick_best(tmp_log_file, self.log_filename)
         os.remove(tmp_log_file)

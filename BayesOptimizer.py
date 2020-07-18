@@ -37,7 +37,7 @@ if __USE_CPP_BACKEND__:
 
 class BayesianOptimizer(object):
 
-    def __init__(self, run_multi_threaded=True):
+    def __init__(self, run_multi_threaded=False):
 
         if run_multi_threaded:
             self.num_threads = multiprocessing.cpu_count()
