@@ -42,7 +42,7 @@ if __USE_CPP_BACKEND__:
 
 class MetaBO(object):
     def __init__(self, run_multi_threaded=False):
-
+        pass
 
 class BayesianOptimizer(object):
 
