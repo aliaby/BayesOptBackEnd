@@ -12,8 +12,12 @@ import copy
 from multiprocessing import Queue, Process, Pipe, Manager
 
 import os
+
+import gym
+from MetaBayesOpt.gym_MetaBo.envs.MetaBO_env import MetaBoEnv
+
 mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
-maximum_search_points = 2**int(log2(mem_bytes/512 - 1))
+maximum_search_points = 2**20#2**int(log2(mem_bytes/512 - 1))
 
 __measure_time__ = True
 __USE_CPP_BACKEND__ = None
@@ -24,6 +28,7 @@ if __REGRESSOR_LIB__ == "GPY":
         import GPy
     except:
         print("importing GPY failed...")
+        __REGRESSOR_LIB__= "SKLEARN"
 
 if __USE_CPP_BACKEND__:
     try:
@@ -33,6 +38,10 @@ if __USE_CPP_BACKEND__:
     except:
         print("Loading C++ backend failed")
         __USE_CPP_BACKEND__ = False
+
+
+class MetaBO(object):
+    def __init__(self, run_multi_threaded=False):
 
 
 class BayesianOptimizer(object):
@@ -52,7 +61,10 @@ class BayesianOptimizer(object):
         if __USE_CPP_BACKEND__:
             self.regressor = None
         else:
-            self.regressor = GaussianProcessRegressor(copy_X_train=False, normalize_y=True)
+            if __REGRESSOR_LIB__=="GPy":
+                self.regressor = None
+            else:
+                self.regressor = GaussianProcessRegressor(copy_X_train=False, normalize_y=True)
 
     def set_map(self, space_map):
         self.regressor = BayesOptimizer_wrapper.PyBayesOptimizer(extract_map_from_config(space_map))
@@ -68,7 +80,16 @@ class BayesianOptimizer(object):
             ys = ys / norm
         else:
             ys = np.reshape(ys, (len(ys), 1))
-        self.regressor.fit(xs, ys)
+            if __REGRESSOR_LIB__ == "GPy":
+                kern = GPy.kern.RBF(input_dim=1, ARD=True)
+                M = 15
+                RR = np.linspace(-1, 1, M)[:, None]
+                α = 0.0001
+                self.regressor = GPy.models.SparseGPRegression(xs, ys, kern.copy(), Z=RR.copy())
+                self.regressor.inference_method = GPy.inference.latent_function_inference.PEP(α)
+                self.regressor.optimize(messages=False)
+            else:
+                self.regressor.fit(xs, ys)
 
     def create_calc_score_threads(self, sliced_test_points, batch_size):
         start = timeit.default_timer()
@@ -104,6 +125,11 @@ class BayesianOptimizer(object):
             return local_maximums
 
     def predict(self, xs, return_std=False):
+        if isinstance(self.regressor, "GPy.models.SparseGPRegression"):
+            mean, var = self.regressor.predict(xs)
+            if not return_std:
+                return mean
+            return mean, var
         predicates = self.regressor.predict(xs, return_std=return_std)
         return predicates
 
@@ -115,7 +141,7 @@ class BayesianOptimizer(object):
             maximums = self.regressor.next_batch(batch_size, visited_indexes)
             if __measure_time__:
                 stop = timeit.default_timer()
-                print('Time-find maximas: ', stop - start)
+                print('Time-find maximums: ', stop - start)
                 print("Visited points so far {}, points to be tested {}".format(len(visited_indexes), len(test_points)))
             return maximums
 
@@ -190,7 +216,9 @@ class RegressorThread(Process):
     def _surrogate(self, points):
         with catch_warnings():
             simplefilter("ignore")
-            return self.regressor.predict(points, return_std=True)
+            if isinstance(self.regressor,"GaussianProcessRegressor"):
+                return self.regressor.predict(points, return_std=True)
+            return self.regressor.predict(points)
 
     def _acquisition(self):
         best = 0

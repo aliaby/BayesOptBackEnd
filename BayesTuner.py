@@ -130,6 +130,47 @@ class BayesWrapper(object):
 
 
 class BayesianTuner(Tuner):
+    """
+    Subclass of Tuner implemented by TVM. It receives a task,
+    select next samples, evaluate the results, and update the
+    underlying model.
+
+    :parameter
+    -------------
+    use_transfer_learning: Boolean, determines whether to use TL or not.
+
+    training_intervals: determines after how many rounds, the underlying GP is updated
+
+    log_interval: logging interval
+
+    target: target platform, cuda, vta, cpu, etc.
+
+    config_space: configuration space inside the task
+
+    config_space_len: len of each axis of the configuration space
+
+    trials: points which will be tested on bare hardware
+
+    visisted: a set of visited opints
+
+    xs: tested configurations so far
+    ys: the result of xs so far
+
+    flop_max: best result achieved so far
+
+    training_epoch:
+
+
+    Attributes
+    --------------
+    bayesian_optimizer: underlying optimizer class, it contains... #TODO
+
+    feature_map: mapping from indices in configuration space to actual configuration
+
+
+
+    """
+
     def __init__(self,
                  task=None,
                  training_interval=16,
@@ -137,7 +178,7 @@ class BayesianTuner(Tuner):
                  use_transfer_learning=False,
                  ):
         super(BayesianTuner, self).__init__(task)
-        self.use_transfer_learning=False
+        self.use_transfer_learning=use_transfer_learning
         self.training_intervals = training_interval
         self.log_intervals = log_interval
         self.traget = None
