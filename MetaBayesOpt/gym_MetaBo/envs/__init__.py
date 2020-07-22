@@ -1,1 +1,1 @@
-from gym_MetaBo.envs.MetaBO_env import MetaBoEnv
+from .MetaBO_env import MetaBoEnv

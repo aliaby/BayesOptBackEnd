@@ -5,114 +5,166 @@ from gym.utils import seeding
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 
+import timeit
 
+import torch as th
 
 class MetaBoEnv(gym.Env, Process):
-  metadata = {'render.modes': ['human']}
+    metadata = {'render.modes': ['human']}
 
-  def __init__(self, name=None, sender=None, reciver=None, config_space_map=None):
+    def __init__(self, name=None, sender=None, reciver=None, config_space_map=None, features = None):
 
-    super(MetaBoEnv, self).__init__()
+        super(MetaBoEnv, self).__init__()
 
-    self.sender = sender
-    self.reciver = reciver
-    self.n_features = 0
-    self.space_size = np.prod([len(x) for x in config_space_map])
-    self.config_space_map = config_space_map
-    self.action_space, self.observation_space = self.create_spaces(config_space_map)
+        self.sender = sender
+        self.reciver = reciver
+        self.n_features = 0
+        if config_space_map != None:
+            self.space_size = [len(x.entities) for x in config_space_map.values()]
+            self.config_space_map = config_space_map
+            self.action_space, self.observation_space = self.create_spaces(config_space_map)
+        else:
+            self.space_size = None
+            self.config_space_map = None
+            self.action_space, self.observation_space = None, None
 
-    self.state = 0
-    self.regressor = GaussianProcessRegressor(copy_X_train=True, normalize_y=True)
-    self.visited_xs = []
-    self.visited_yx = []
-    self.best_ys = 0
+        self.state = 0
+        self.regressor = GaussianProcessRegressor(copy_X_train=True, normalize_y=True)
+        self.visited_xs = []
+        self.visited_yx = []
+        self.best_ys = 0
+        self.best_ys_gp = 0
+        self.best_xs_gp = None
 
-    self.rng = None
-    self.seeded_with = None
+        self.policy = None
 
-  def step(self, action):
+        self.rng = None
+        self.seeded_with = None
+        self.seed(42)
+        self.n_features = 22
+        self.N = 1000
+        self.obs = None
 
-    # self.sender.put({"action":action, "state":self.state})
-    # reward = self.reciver.get()["reward"]
-    # print("reward : {}".format(reward))
-    xs = self.get_features(action)
-    reward = self._rewrad(xs)
-    info = {}
+    def set_config_space(self, config_space_map):
+        self.space_size = [len(x.entities) for x in config_space_map.values()]
+        print(self.space_size)
+        self.config_space_map = config_space_map
+        self.action_space, self.observation_space = self.create_spaces(config_space_map)
 
-    obs = self.get_state(xs)
-    done = False
-    return obs, reward, done, info
+    def step(self, action):
+        xs = self.get_features(action)
+        reward = self._rewrad(xs)
+        info = {}
+        self.update_maximum(xs)
+        self.obs = obs = self.get_state(
+                            [[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))])
+        done = False
+        return obs, reward, done, info
 
-  def reset(self):
-    return self.get_state(self.get_features(self.rng.randint(0, self.space_size)))
+    def reset(self):
 
-  def render(self, mode='human'):
-    pass
+        return self.get_state(
+                            [[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))])
+        # return self.get_state(self.get_features([self.rng.randint(0, len) for len in self.space_size]))
 
-  def seed(self, seed=None):
-    self.rng = np.random.RandomState()
-    self.seeded_with = seed
-    self.rng.seed(self.seeded_with)
+    def render(self, mode='human'):
+        pass
 
+    def seed(self, seed=None):
+        self.rng = np.random.RandomState()
+        self.seeded_with = seed
+        self.rng.seed(self.seeded_with)
 
-  def set_messanger(self, sender, reciver):
-    self.sender = sender
-    self.reciver = reciver
+    def set_messanger(self, sender, reciver):
+        self.sender = sender
+        self.reciver = reciver
 
-  def run(self):
-    while True:
-      pass
+    def run(self):
+        while True:
+            xs, ys = self.reciver.get()
+            self.fit_regressor(xs, ys)
+            self.sender.put("Done")
 
-  def _rewrad(self, xs_features):
-    ys , _ = self.regressor.predict(xs_features, return_std=True)
+    def _rewrad(self, xs_features):
+        ys, _ = self.regressor.predict(xs_features, return_std=True)
 
-    return -(self.best_ys - ys)
+        return -(self.best_ys - ys)
 
+    def create_spaces(self, config_space_map):
+        return self.create_action_space(config_space_map), self.create_observation_space(config_space_map)
 
-  def create_spaces(self, config_space_map):
-    return self.create_action_space(config_space_map), self.create_observation_space(config_space_map)
+    def create_action_space(self, config_space_map):
+        dims = []
+        for _, tile in config_space_map.items():
+            dims.append(len(tile.entities))
+            if dims[-1] <= 0:
+                dims[-1] = 1
+        print(dims)
+        return gym.spaces.MultiDiscrete(dims)
 
-  def create_action_space(self,config_space_map):
-    dims = []
-    for tile in config_space_map:
-      dims.append((0, len(tile.entities)-1))
+    def create_observation_space(self, config_space_map):
+        # return gym.spaces.Tuple((gym.spaces.Box(np.array((0,1)), np.array((0,10))),
+        #                          gym.spaces.MultiDiscrete(dims)))
+        return gym.spaces.Box(low=-1000.0, high=1000.0,
+                                                shape=(self.N, self.n_features),
+                                                dtype=np.float32)
 
-    return gym.spaces.MultiDiscrete(dims)
+    def get_state(self, X):
+        states = []
+        Ys, stds = self.regressor.predict(X, return_std=True)
+        for xs, ys, std in zip(X, Ys, stds):
+            state = []
+            var = std ** 2
+            state.append(ys)
+            state.append(var)
+            state = np.concatenate((state, self.get_features(xs)[0]), axis=0)
+            states.append(state)
+        for xs, ys in zip(self.visited_xs, self.visited_yx):
+            state = []
+            state.append(ys)
+            state.append(0)
+            state = np.concatenate((state, self.get_features(xs)[0]), axis=0)
+            states.append(state)
+        return states
 
+    def fit_regressor(self, xs, ys):
+        ys = np.reshape(ys, (len(ys), 1))
+        self.regressor.fit(xs, ys)
+        self.visited_xs = xs  # np.concatenate(self.visited_xs, xs, axis=0)
+        self.visited_yx = ys  # np.concatenate(self.visited_yx, ys, axis=0)
+        self.best_ys = np.max(self.visited_yx / np.linalg.norm(self.visited_yx))
 
-  def create_observation_space(self, config_space_map):
-    dims = []
-    for tile in config_space_map:
-      dims.append((0, len(tile.entities)-1))
+    def get_features(self, action):
+        feature = np.asarray([])
+        for index, tile in zip(action, self.config_space_map.values()):
+            if index > len(tile.entities):
+                index = index % len(tile.entities)
+            if hasattr(tile.entities[index - 1], 'size'):
+                feature = np.concatenate((feature, tile.entities[index - 1].size), axis=0)
+            else:
+                feature = np.concatenate((feature, [tile.entities[index - 1].val]), axis=0)
+        return [feature]
 
-    return gym.spaces.Tuple(gym.spaces.Box(np.array((0,1)), np.array((0,10))),
-                             gym.spaces.MultiDiscrete(dims))
+    def next_batch(self, batch_size):
+        actions, values = self.find_maximums()
+        maximums = []
+        for _ in range(batch_size):
+            index = th.argmax(values)
+            maximums.append(np.asarray(th.Tensor.cpu(actions[index])))
+            values[index] = -1000000
 
-  def get_state(self, xs):
-    state = []
-    ys , std = self.regressor.predict(xs, return_std=True)
-    var = std**2
-    state.append(ys)
-    state.append(var)
-    state.append(xs)
+        return maximums
 
-  def fit_regressor(self, xs, ys):
-     ys = np.reshape(ys, (len(ys), 1))
-     self.regressor.fit(xs, ys)
+    def set_policy(self, policy):
+        self.policy = policy
 
-     self.visited_xs = np.concatenate(self.visited_xs, xs)
-     self.visited_yx = np.concatenate(self.visited_yx, ys)
-     self.best_ys = np.max(self.visited_yx/np.liang.norm(self.visited_yx))
+    def find_maximums(self):
+        states = [self.get_state([[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))]) for _ in range(1024)]
+        return self.policy.get_value(states)
 
+    def update_maximum(self, xs):
+        mean = self.regressor.predict(xs)
+        if mean > self.best_ys_gp or self.best_xs_gp is None:
+            self.best_xs_gp = xs
+            self.best_ys = mean
 
-
-  def get_features(self, action):
-    feature = []
-
-    for index, tile in zip(action, self.config_space_map):
-      feature.append(tile.entities[index])
-
-    return feature.reshape([-1,])
-
-  def next_batch(self, xs):
-    return self.regressor.predict(xs, return_std=True)
