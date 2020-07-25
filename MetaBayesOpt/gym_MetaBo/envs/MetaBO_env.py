@@ -10,6 +10,7 @@ import timeit
 import torch as th
 
 class MetaBoEnv(gym.Env, Process):
+
     metadata = {'render.modes': ['human']}
 
     def __init__(self, name=None, sender=None, reciver=None, config_space_map=None, features = None):
@@ -42,12 +43,15 @@ class MetaBoEnv(gym.Env, Process):
         self.seeded_with = None
         self.seed(42)
         self.n_features = 22
-        self.N = 1000
+        self.N = 10000
         self.obs = None
+        self.state_space = None
+        self.state_space_len = 10
+        self.feature_space = None
+        self.search_space = None
 
     def set_config_space(self, config_space_map):
         self.space_size = [len(x.entities) for x in config_space_map.values()]
-        print(self.space_size)
         self.config_space_map = config_space_map
         self.action_space, self.observation_space = self.create_spaces(config_space_map)
 
@@ -56,15 +60,15 @@ class MetaBoEnv(gym.Env, Process):
         reward = self._rewrad(xs)
         info = {}
         self.update_maximum(xs)
-        self.obs = obs = self.get_state(
-                            [[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))])
+        self.obs = obs = self.feature_space[0]#self.get_state(self.state_space[self.rng.randint(0, self.state_space_len)])
         done = False
         return obs, reward, done, info
 
     def reset(self):
+        self.state_space = [[[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))] for i in range(self.state_space_len)]
+        self.feature_space = [self.get_state(self.state_space[i]) for i in range(self.state_space_len)]
 
-        return self.get_state(
-                            [[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))])
+        return self.feature_space[0]
         # return self.get_state(self.get_features([self.rng.randint(0, len) for len in self.space_size]))
 
     def render(self, mode='human'):
@@ -103,8 +107,6 @@ class MetaBoEnv(gym.Env, Process):
         return gym.spaces.MultiDiscrete(dims)
 
     def create_observation_space(self, config_space_map):
-        # return gym.spaces.Tuple((gym.spaces.Box(np.array((0,1)), np.array((0,10))),
-        #                          gym.spaces.MultiDiscrete(dims)))
         return gym.spaces.Box(low=-1000.0, high=1000.0,
                                                 shape=(self.N, self.n_features),
                                                 dtype=np.float32)
@@ -130,8 +132,8 @@ class MetaBoEnv(gym.Env, Process):
     def fit_regressor(self, xs, ys):
         ys = np.reshape(ys, (len(ys), 1))
         self.regressor.fit(xs, ys)
-        self.visited_xs = xs  # np.concatenate(self.visited_xs, xs, axis=0)
-        self.visited_yx = ys  # np.concatenate(self.visited_yx, ys, axis=0)
+        self.visited_xs = xs
+        self.visited_yx = ys
         self.best_ys = np.max(self.visited_yx / np.linalg.norm(self.visited_yx))
 
     def get_features(self, action):
@@ -159,8 +161,9 @@ class MetaBoEnv(gym.Env, Process):
         self.policy = policy
 
     def find_maximums(self):
-        states = [self.get_state([[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))]) for _ in range(1024)]
-        return self.policy.get_value(states)
+        if self.search_space is None:
+            self.search_space = [self.get_state([[self.rng.randint(0, len) for len in self.space_size] for i in range(self.N - len(self.visited_xs))]) for _ in range(256)]
+        return self.policy.get_value(self.search_space)
 
     def update_maximum(self, xs):
         mean = self.regressor.predict(xs)

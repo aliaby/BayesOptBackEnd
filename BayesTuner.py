@@ -7,11 +7,11 @@ import os
 from ..tuner import Tuner
 from tvm import autotvm
 
-from BayesOptimizer import BayesianOptimizer
+from BayesOptimizer import BayesianOptimizer, MetaBO
 
 import multiprocessing
 
-
+__USE_METABO__ = False
 
 ### The following macros are used to determine the structure of the system
 
@@ -22,7 +22,7 @@ global __USE_CPP_BACKEND__
 __USE_CPP_BACKEND__ = False
 
 ### when feature copression is enabled, we require, features space needs less memory.
-__compress_features__ = True
+__compress_features__ = False
 
 
 if __USE_CPP_BACKEND__:
@@ -173,7 +173,7 @@ class BayesianTuner(Tuner):
 
     def __init__(self,
                  task=None,
-                 training_interval=16,
+                 training_interval=64,
                  log_interval=50,
                  use_transfer_learning=False,
                  ):
@@ -195,7 +195,10 @@ class BayesianTuner(Tuner):
         self.flops_max = 0.0
         self.training_epoch = 0
 
-        self.bayesian_optimizer = BayesianOptimizer()
+        if __USE_METABO__:
+            self.bayesian_optimizer = None
+        else:
+            self.bayesian_optimizer = BayesianOptimizer()
         self.feature_map = []
 
         self.num_threads = 24
@@ -245,11 +248,20 @@ class BayesianTuner(Tuner):
         ### Minimize index map size
         self.feature_map = []
         indices = np.arange(np.prod(self.config_space_len))
-        if not __USE_CPP_BACKEND__:
+
+        if __USE_METABO__:
+            # if self.bayesian_optimizer is None:
+            self.bayesian_optimizer = MetaBO(config=self.task.config_space.space_map)
+            # else:
+            #     self.bayesian_optimizer = MetaBO(config=self.task.config_space.space_map,
+            #                                      PPOModel=self.bayesian_optimizer.get_base_model())
+        elif not __USE_CPP_BACKEND__:
             self.feature_map = self.pool.map(_get_config, indices)
 
         else:
             self.bayesian_optimizer.set_map(self.config_space.space_map)
+
+
 
         if __measure_time__:
             stop = timeit.default_timer()
@@ -310,8 +322,13 @@ class BayesianTuner(Tuner):
                 and self.flops_max > 1e-6:
 
             self.bayesian_optimizer.fit(xs_configurations, self.ys[-min(len(self.xs), update_size):])
-            visited_map = [self.feature_map[index] for index in self.visited]
-            maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size=self.training_intervals, test_points=self.feature_map)
+            if not __USE_METABO__:
+                visited_map = [self.feature_map[index] for index in self.visited]
+                maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size=self.training_intervals, test_points=self.feature_map)
+            else:
+                maxes = self.bayesian_optimizer.next_batch(batch_size=self.training_intervals,
+                                                           config_space=self.config_space,
+                                                           visited=self.visited)
             self.training_epoch += 1
             self.trials = maxes
             self.trial_pt = 0

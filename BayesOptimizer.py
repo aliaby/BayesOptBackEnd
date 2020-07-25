@@ -9,12 +9,28 @@ import timeit
 from math import log2
 import threading
 import copy
-from multiprocessing import Queue, Process, Pipe, Manager
+from multiprocessing import Queue, Process, Manager
 
 import os
 
 import gym
-from MetaBayesOpt.gym_MetaBo.envs.MetaBO_env import MetaBoEnv
+
+from gym_MetaBo.envs.MetaBO_env import MetaBoEnv
+
+from MetaBayesOpt.AquisitionFunctions import MLPAF
+from stable_baselines3 import PPO
+from stable_baselines3.common.policies import register_policy
+from stable_baselines3.common.type_aliases import GymEnv
+from stable_baselines3.common.policies import ActorCriticPolicy
+from stable_baselines3.common.utils import explained_variance, get_schedule_fn
+from stable_baselines3.common.buffers import RolloutBuffer
+
+from typing import Type, Union, Callable, Optional, Dict, Any
+
+import torch as th
+
+
+register_policy('MLPAF', MLPAF)
 
 mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
 maximum_search_points = 2**20#2**int(log2(mem_bytes/512 - 1))
@@ -39,10 +55,128 @@ if __USE_CPP_BACKEND__:
         print("Loading C++ backend failed")
         __USE_CPP_BACKEND__ = False
 
+class PPOTL(PPO):
+    def __init__(self, policy: Union[str, Type[ActorCriticPolicy]],
+                 env: Union[GymEnv, str],
+                 learning_rate: Union[float, Callable] = 3e-4,
+                 n_steps: int = 64,
+                 batch_size: Optional[int] = 64,
+                 n_epochs: int = 10,
+                 gamma: float = 0.99,
+                 gae_lambda: float = 0.95,
+                 clip_range: float = 0.2,
+                 clip_range_vf: Optional[float] = None,
+                 ent_coef: float = 0.0,
+                 vf_coef: float = 0.5,
+                 max_grad_norm: float = 0.5,
+                 use_sde: bool = False,
+                 sde_sample_freq: int = -1,
+                 target_kl: Optional[float] = None,
+                 tensorboard_log: Optional[str] = None,
+                 create_eval_env: bool = False,
+                 policy_kwargs: Optional[Dict[str, Any]] = None,
+                 verbose: int = 0,
+                 seed: Optional[int] = None,
+                 device: Union[th.device, str] = "auto",
+                 _init_setup_model: bool = True):
+
+        super(PPOTL, self).__init__(policy=policy, env=env, learning_rate=learning_rate,
+                                    n_steps=n_steps, batch_size=batch_size, n_epochs=n_epochs,
+                                    gamma=gamma, gae_lambda=gae_lambda, clip_range=clip_range,
+                                    clip_range_vf=clip_range_vf, ent_coef=ent_coef, vf_coef=vf_coef,
+                                    max_grad_norm=max_grad_norm, use_sde=use_sde, sde_sample_freq=sde_sample_freq,
+                                    target_kl=target_kl, tensorboard_log=tensorboard_log, create_eval_env=create_eval_env,
+                                    policy_kwargs=policy_kwargs, verbose=verbose, seed=seed, device=device,
+                                    _init_setup_model=_init_setup_model)
+
+
+    def set_policy(self, policy):
+        self.policy = policy
+        self.setup_PPO_model()
+
+    def setup_PPO_model(self) -> None:
+
+        self._setup_lr_schedule()
+        self.set_random_seed(self.seed)
+
+        self.rollout_buffer = RolloutBuffer(self.n_steps, self.observation_space,
+                                            self.action_space, self.device,
+                                            gamma=self.gamma, gae_lambda=self.gae_lambda,
+                                            n_envs=self.n_envs)
+        self.policy = self.policy.to(self.device)
+
+        # Initialize schedules for policy/value clipping
+        self.clip_range = get_schedule_fn(self.clip_range)
+        if self.clip_range_vf is not None:
+            if isinstance(self.clip_range_vf, (float, int)):
+                assert self.clip_range_vf > 0, ("`clip_range_vf` must be positive, "
+                                                "pass `None` to deactivate vf clipping")
+
+            self.clip_range_vf = get_schedule_fn(self.clip_range_vf)
+
+
 
 class MetaBO(object):
-    def __init__(self, run_multi_threaded=False):
+    def __init__(self, config, PPOModel=None):
+        self.env = gym.make('MetaBo-v3')
+        self.receiver = Queue()
+        self.sender = Queue()
+        self.env.set_messanger(self.receiver, self.sender)
+        self.env.set_config_space(config_space_map=config)
+        self.env.reset()
+
+        if PPOModel is None:
+            self.PPOModel = PPOTL('MLPAF', self.env, verbose=0, _init_setup_model=True)
+        else:
+            self.PPOModel = PPOTL('MLPAF', self.env, verbose=0, _init_setup_model=False)
+            policy = PPOModel.policy
+            policy.action_space = self.env.action_space
+            policy.observation_space = self.env.observation_space
+            self.PPOModel.action_space = self.env.action_space
+            self.PPOModel.set_policy(policy)
+            self.PPOModel.set_env(self.env)
+
+        self.env.set_policy(self.PPOModel.policy)
+
+    def reset(self):
         pass
+
+    def fit(self, xs, ys):
+        if not self.env.is_alive():
+            self.env.start()
+        self.sender.put((xs, ys))
+        res = None
+        while res != "Done":
+            res = self.receiver.get()
+        print("\n")
+        start = timeit.default_timer()
+        self.PPOModel.learn(total_timesteps=10)
+        print("training time: {}".format(timeit.default_timer() - start))
+
+    def next_batch(self,batch_size, config_space, visited):
+        start = timeit.default_timer()
+
+        config_space_dims = np.asarray([len(space) for name, space in config_space.space_map.items()])
+        inverse_conf_space_dimes = np.asarray([np.prod(config_space_dims[:i]) for i in range(len(config_space_dims))])
+
+        maxes = self.env.next_batch(batch_size)
+        indices = []
+        for item in maxes:
+            indices.append(space_dindex(item, inverse_conf_space_dimes))
+
+        print("inference time: {}".format(timeit.default_timer() - start))
+
+        return indices
+
+    def get_base_model(self):
+        return self.PPOModel
+
+def space_dindex(action, inverse_conf_space_dimes):
+    index = 0
+    i = 0
+    for len_i, addr_i in zip(inverse_conf_space_dimes, action):
+        index += len_i * addr_i
+    return index
 
 class BayesianOptimizer(object):
 
