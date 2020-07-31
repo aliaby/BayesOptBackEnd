@@ -3,15 +3,15 @@ import copy
 import timeit
 import os
 
-
 from ..tuner import Tuner
 from tvm import autotvm
 
-from BayesOptimizer import BayesianOptimizer, MetaBO
+from BayesOptimizer import BayesianOptimizer
+from MetaBO import MetaBO
 
 import multiprocessing
 
-__USE_METABO__ = False
+__USE_METABO__ = True
 
 ### The following macros are used to determine the structure of the system
 
@@ -24,14 +24,15 @@ __USE_CPP_BACKEND__ = False
 ### when feature copression is enabled, we require, features space needs less memory.
 __compress_features__ = False
 
-
 if __USE_CPP_BACKEND__:
     try:
         import BayesOptimizer_wrapper
+
         print("Using C++ backend...")
     except:
         print("Loading C++ backend failed")
         __USE_CPP_BACKEND__ = False
+
 
 class BayesWrapper(object):
     """
@@ -71,16 +72,17 @@ class BayesWrapper(object):
     tasks
 
     """
+
     def __init__(self,
                  tasks,
-                  measure_option,
-                  n_trial=1000,
-                  early_stopping=False,
-                  log_filename='tuning.log',
-                  use_transfer_learning=False,
-                  stop_threshold=5e11,
-                  call_back = None,
-                  tuner=None
+                 measure_option,
+                 n_trial=1000,
+                 early_stopping=False,
+                 log_filename='tuning.log',
+                 use_transfer_learning=False,
+                 stop_threshold=5e11,
+                 call_back=None,
+                 tuner=None
                  ):
 
         self.tasks = tasks
@@ -110,23 +112,40 @@ class BayesWrapper(object):
             os.remove(tmp_log_file)
 
         ### set the tunning budget
-        budget = self.n_trials*len(self.tasks)
+        budget = self.n_trials * len(self.tasks)
         for i, task in enumerate(reversed(self.tasks)):
             self.tunner.reset(task, use_transfer_learning=self.use_transfer_laerning)
             prefix = "[Task %2d/%2d] " % (i + 1, len(self.tasks))
-            self.best_results[i], samples, trials = self.tunner.tune(n_trial=self.n_trials,
+            self.best_results[i], samples, trials = self.tunner.tune(n_trial=self.n_trials*0.7,
                                                                      measure_option=self.measure_option,
-                                                                     callbacks=[autotvm.callback.progress_bar(self.n_trials, prefix=prefix),
-                                                                                autotvm.callback.log_to_file(tmp_log_file)]
-                                                                    )
+                                                                     callbacks=[
+                                                                         autotvm.callback.progress_bar(self.n_trials*0.7,
+                                                                                                       prefix=prefix),
+                                                                         autotvm.callback.log_to_file(tmp_log_file)]
+                                                                     )
             self.sampling_points.append(samples)
             budget -= trials
 
+        print(np.std(self.best_results))
+        
+        while np.std(self.best_results) > 0 and budget > 0:
+            next_point = np.argmin(self.best_results)
+            task = self.tasks[len(self.tasks) - np.argmin(self.best_results) - 1]
+            self.tunner.reset(task, use_transfer_learning=self.use_transfer_laerning, data=self.sampling_points[next_point])
+            prefix = "[Task %2d/%2d] " % (next_point+1, len(self.tasks))
+            result, samples, trials = self.tunner.tune(n_trial=self.n_trials,
+                                                                     measure_option=self.measure_option,
+                                                                     callbacks=[
+                                                                         autotvm.callback.progress_bar(self.n_trials,
+                                                                                                       prefix=prefix),
+                                                                         autotvm.callback.log_to_file(tmp_log_file)]
+                                                                     )
+            self.sampling_points[next_point] = samples
+            budget -= trials
+            self.best_results[next_point] = max(self.best_results[next_point], result)
+
         autotvm.record.pick_best(tmp_log_file, self.log_filename)
         os.remove(tmp_log_file)
-
-
-
 
 
 class BayesianTuner(Tuner):
@@ -178,7 +197,7 @@ class BayesianTuner(Tuner):
                  use_transfer_learning=False,
                  ):
         super(BayesianTuner, self).__init__(task)
-        self.use_transfer_learning=use_transfer_learning
+        self.use_transfer_learning = use_transfer_learning
         self.training_intervals = training_interval
         self.log_intervals = log_interval
         self.traget = None
@@ -215,7 +234,7 @@ class BayesianTuner(Tuner):
         global _config_space, _config_space_dims
         _config_space = self.config_space
         _config_space_dims = []
-        for key,tile in self.config_space.space_map.items():
+        for key, tile in self.config_space.space_map.items():
             _config_space_dims.append(tile.num_output)
             if _config_space_dims[-1] == 0:
                 _config_space_dims[-1] = 1
@@ -237,9 +256,13 @@ class BayesianTuner(Tuner):
         self.flops_max = 0.0
         self.training_epoch = 0
 
+
         if data is not None:
-            self.xs = data[0]
-            self.ys = data[1]
+            self.xs = list(data[0])
+            self.ys = list(data[1])
+            self.flops_max = max(self.ys)
+            print(len(self.xs))
+
         self.feature_map = None
 
         if __measure_time__:
@@ -261,12 +284,9 @@ class BayesianTuner(Tuner):
         else:
             self.bayesian_optimizer.set_map(self.config_space.space_map)
 
-
-
         if __measure_time__:
             stop = timeit.default_timer()
             print('Time: ', stop - start)
-
 
     def next_batch(self, batch_size):
         ret = []
@@ -294,7 +314,6 @@ class BayesianTuner(Tuner):
             counter += 1
         return ret
 
-
     def update(self, inputs, results):
         for inp, res in zip(inputs, results):
             index = inp.config.index
@@ -304,8 +323,10 @@ class BayesianTuner(Tuner):
                 self.flops_max = max(self.flops_max, flops)
                 self.ys.append(flops)
             else:
-                self.xs.append(index)
-                self.ys.append(0.0)
+                # self.xs.append(index)
+                # self.ys.append(0.0)
+                pass
+                ## TODO
 
         xs_configurations = []
         update_size = len(self.xs)
@@ -314,7 +335,7 @@ class BayesianTuner(Tuner):
         else:
             for x in self.xs[-min(len(self.xs), update_size):]:
                 if len(self.feature_map) == np.prod(self.config_space_len):
-                    xs_configurations.append(copy.copy(self.feature_map[x]))
+                    xs_configurations.append(copy.copy(self.feature_map[int(x)]))
                 else:
                     xs_configurations.append(np.asarray(self.config_space.get(x).get_flatten_feature()))
 
@@ -324,7 +345,10 @@ class BayesianTuner(Tuner):
             self.bayesian_optimizer.fit(xs_configurations, self.ys[-min(len(self.xs), update_size):])
             if not __USE_METABO__:
                 visited_map = [self.feature_map[index] for index in self.visited]
-                maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited, batch_size=self.training_intervals, test_points=self.feature_map)
+                maxes = self.bayesian_optimizer.next_batch(visited=visited_map, visited_indexes=self.visited,
+                                                           batch_size=self.training_intervals*4,
+                                                           test_points=self.feature_map,
+                                                           visited_results=self.ys)
             else:
                 maxes = self.bayesian_optimizer.next_batch(batch_size=self.training_intervals,
                                                            config_space=self.config_space,
@@ -338,17 +362,17 @@ class BayesianTuner(Tuner):
         if len(self.xs) % 128 == 0:
             self.training_intervals *= 2
 
-
     def has_next(self):
         return len(self.visited) < len(self.config_space)
 
     def tune(self, *args, **kwargs):
         super(BayesianTuner, self).tune(*args, **kwargs)
-        return self.flops_max, [self.xs,self.ys], self.n_trial
+        return (self.flops_max/self.config_space.flop), [self.xs, self.ys], self.n_trial
 
 
 _config_space = None
 _config_space_dims = None
+
 
 ### get the fallten features of configuration space from the globaled congi space
 ### seperated to be maped in a pool of threads
@@ -363,22 +387,23 @@ def _get_config(index):
         elif bits < 16:
             return 'int16'
         return 'int32'
+
     config = _config_space.get(index).get_flatten_feature()
     if __compress_features__:
         return np.asarray(compress_config(config))
     return np.asarray(config)
 
-pow2 = [1, 1024, 1024*1024, 1024*1024*1024, 1024**4]
+
+pow2 = [1, 1024, 1024 * 1024, 1024 * 1024 * 1024, 1024 ** 4]
+
 
 def compress_config(config):
     _config = []
     g_index = 0
     for index in _config_space_dims:
-        _config.append(np.sum([config[i]*pow2[i-g_index] for i in range(g_index, g_index+index)]))
+        _config.append(np.sum([config[i] * pow2[i - g_index] for i in range(g_index, g_index + index)]))
         g_index += index
     return _config
 
 ### Input : tasks.config_space.space_map
 ### output: a sorted dict from axises to possible values for each axis - purpose is passing to cython code
-
-
