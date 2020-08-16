@@ -5,7 +5,7 @@ from scipy.stats import norm
 from warnings import catch_warnings
 from warnings import simplefilter
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel, _check_length_scale
 import timeit
 import copy
 from multiprocessing import Queue, Process, Manager
@@ -16,6 +16,8 @@ import os
 from MetaBayesOpt.AquisitionFunctions import MLPAF
 from stable_baselines3.common.policies import register_policy
 
+
+MMetric = None
 
 __ACQUISITION__ = 'PI'
 
@@ -47,7 +49,11 @@ if __USE_CPP_BACKEND__:
 
 class BayesianOptimizer(object):
 
-    def __init__(self, run_multi_threaded=False):
+    def __init__(self, run_multi_threaded=False, metric=None):
+
+        if metric is not None:
+            global MMetric
+            MMetric = metric
 
         if run_multi_threaded:
             self.num_threads = multiprocessing.cpu_count()
@@ -66,7 +72,7 @@ class BayesianOptimizer(object):
                 self.regressor = None
             else:
                 kernel = (ConstantKernel(1.0, constant_value_bounds="fixed") *
-                          RBF(1.0, length_scale_bounds="fixed"))
+                          sRBF(1.0, length_scale_bounds="fixed"))
                 self.regressor = GaussianProcessRegressor(copy_X_train=False, normalize_y=True, kernel=kernel)
 
     def set_map(self, space_map):
@@ -211,12 +217,15 @@ class BayesianOptimizer(object):
         probs = norm.cdf(minimum, loc=mu, scale=std)
         return probs
 
-    def expected_improvement(self, test_points, evaluation_results, xi=0.01):
+    def expected_improvement(self, test_points, evaluation_results, xi=0.02):
         best = min(evaluation_results)
         mu, std = self.surrogate(test_points)
         mu = mu[:, 0]
         # std = std
-        with np.errstate(divide='warn'):
+        print(np.mean(mu))
+        with catch_warnings():
+            # ignore generated warnings
+            simplefilter("ignore")
             imp = mu - best - xi
             Z = imp / std
             ei = imp * norm.cdf(Z) + std * norm.pdf(Z)
@@ -290,3 +299,70 @@ def extract_map_from_config(space_map):
             ret[bytes("a" + str(i), encoding='utf8')] = [[x.val] for x in value.entities]
         i += 1
     return ret
+
+from scipy.spatial.distance import pdist, cdist, squareform
+
+class sRBF(RBF):
+    def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
+        self.length_scale = length_scale
+        self.length_scale_bounds = length_scale_bounds
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        """Return the kernel k(X, Y) and optionally its gradient.
+
+        Parameters
+        ----------
+        X : array, shape (n_samples_X, n_features)
+            Left argument of the returned kernel k(X, Y)
+
+        Y : array, shape (n_samples_Y, n_features), (optional, default=None)
+            Right argument of the returned kernel k(X, Y). If None, k(X, X)
+            if evaluated instead.
+
+        eval_gradient : bool (optional, default=False)
+            Determines whether the gradient with respect to the kernel
+            hyperparameter is determined. Only supported when Y is None.
+
+        Returns
+        -------
+        K : array, shape (n_samples_X, n_samples_Y)
+            Kernel k(X, Y)
+
+        K_gradient : array (opt.), shape (n_samples_X, n_samples_X, n_dims)
+            The gradient of the kernel k(X, X) with respect to the
+            hyperparameter of the kernel. Only returned when eval_gradient
+            is True.
+        """
+        print(MMetric)
+        X = np.atleast_2d(X)
+        length_scale = _check_length_scale(X, self.length_scale)
+        if Y is None:
+            dists = pdist(X / length_scale, metric=MMetric)
+            K = np.exp(-.5 * dists)
+            # convert from upper-triangular matrix to square matrix
+            K = squareform(K)
+            np.fill_diagonal(K, 1)
+        else:
+            if eval_gradient:
+                raise ValueError(
+                    "Gradient can only be evaluated when Y is None.")
+            dists = cdist(X / length_scale, Y / length_scale,
+                          metric=MMetric)
+            K = np.exp(-.5 * dists)
+
+        if eval_gradient:
+            if self.hyperparameter_length_scale.fixed:
+                # Hyperparameter l kept fixed
+                return K, np.empty((X.shape[0], X.shape[0], 0))
+            elif not self.anisotropic or length_scale.shape[0] == 1:
+                K_gradient = \
+                    (K * squareform(dists))[:, :, np.newaxis]
+                return K, K_gradient
+            elif self.anisotropic:
+                # We need to recompute the pairwise dimension-wise distances
+                K_gradient = (X[:, np.newaxis, :] - X[np.newaxis, :, :]) ** 2 \
+                    / (length_scale ** 2)
+                K_gradient *= K[..., np.newaxis]
+                return K, K_gradient
+        else:
+            return K
