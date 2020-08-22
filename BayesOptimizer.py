@@ -26,7 +26,7 @@ register_policy('MLPAF', MLPAF)
 mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
 maximum_search_points = 2**20#2**int(log2(mem_bytes/512 - 1))
 
-__measure_time__ = True
+__measure_time__ = False
 __USE_CPP_BACKEND__ = None
 __REGRESSOR_LIB__ = "SKLearn"
 
@@ -222,7 +222,6 @@ class BayesianOptimizer(object):
         mu, std = self.surrogate(test_points)
         mu = mu[:, 0]
         # std = std
-        print(np.mean(mu))
         with catch_warnings():
             # ignore generated warnings
             simplefilter("ignore")
@@ -333,7 +332,6 @@ class sRBF(RBF):
             hyperparameter of the kernel. Only returned when eval_gradient
             is True.
         """
-        print(MMetric)
         X = np.atleast_2d(X)
         length_scale = _check_length_scale(X, self.length_scale)
         if Y is None:

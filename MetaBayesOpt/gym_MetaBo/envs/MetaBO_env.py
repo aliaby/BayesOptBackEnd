@@ -1,13 +1,15 @@
-import gym
 from multiprocessing import Process, Queue
-from gym import error, spaces, utils
-from gym.utils import seeding
+from itertools import chain
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
-
 import timeit
 
+import gym
+from gym import error, spaces, utils
+from gym.utils import seeding
+from sklearn.gaussian_process import GaussianProcessRegressor
 import torch as th
+
+from tvm.autotvm.task.space import SplitEntity
 
 class MetaBoEnv(gym.Env, Process):
 
@@ -42,7 +44,6 @@ class MetaBoEnv(gym.Env, Process):
         self.rng = None
         self.seeded_with = None
         self.seed(42)
-        self.n_features = 22
         self.N = 10000
         self.obs = None
         self.state_space = None
@@ -50,13 +51,19 @@ class MetaBoEnv(gym.Env, Process):
         self.feature_space = None
         self.search_space = None
 
+        self.actions_dims = None
+        self.config_space_maximums = []
+
+        self.extra_features = 2 ## std + var
+
+
     def set_config_space(self, config_space_map):
         self.space_size = [len(x.entities) for x in config_space_map.values()]
         self.config_space_map = config_space_map
         self.action_space, self.observation_space = self.create_spaces(config_space_map)
 
     def step(self, action):
-        xs = self.get_features(action)
+        xs = self.get_features([action])
         reward = self._rewrad(xs)
         info = {}
         self.update_maximum(xs)
@@ -103,11 +110,24 @@ class MetaBoEnv(gym.Env, Process):
             dims.append(len(tile.entities))
             if dims[-1] <= 0:
                 dims[-1] = 1
-        print(dims)
-        return gym.spaces.MultiDiscrete(dims)
+            if hasattr(tile, 'product'):
+                self.config_space_maximums.append([tile.product] * len(tile.entities[-1].size))
+            else:
+                self.config_space_maximums.append([max([tile.entities[-1].val])])
+        self.config_space_maximums = list(chain.from_iterable(self.config_space_maximums))
+        self.actions_dims = dims
+        return gym.spaces.Box(low=0, high=1,
+                              shape=(len(config_space_map),),
+                              dtype=np.float32)
 
     def create_observation_space(self, config_space_map):
-        return gym.spaces.Box(low=-1000.0, high=1000.0,
+        for _, tile in config_space_map.items():
+            if isinstance(tile.entities[0], SplitEntity):
+                self.n_features += len(tile.entities[0].size) - 1
+            else:
+                self.n_features += 1
+        self.n_features += self.extra_features
+        return gym.spaces.Box(low=-1000, high=1000.0,
                                                 shape=(self.N, self.n_features),
                                                 dtype=np.float32)
 
@@ -119,13 +139,13 @@ class MetaBoEnv(gym.Env, Process):
             var = std ** 2
             state.append(ys)
             state.append(var)
-            state = np.concatenate((state, self.get_features(xs)[0]), axis=0)
+            state = np.concatenate((state, self.get_features(xs)), axis=0)
             states.append(state)
         for xs, ys in zip(self.visited_xs, self.visited_yx):
             state = []
             state.append(ys)
             state.append(0)
-            state = np.concatenate((state, self.get_features(xs)[0]), axis=0)
+            state = np.concatenate((state, self.get_features(xs)), axis=0)
             states.append(state)
         return states
 
@@ -137,6 +157,7 @@ class MetaBoEnv(gym.Env, Process):
         self.best_ys = np.max(self.visited_yx / np.linalg.norm(self.visited_yx))
 
     def get_features(self, action):
+        action = self.discritize_action(action)
         feature = np.asarray([])
         for index, tile in zip(action, self.config_space_map.values()):
             if index > len(tile.entities):
@@ -145,7 +166,14 @@ class MetaBoEnv(gym.Env, Process):
                 feature = np.concatenate((feature, tile.entities[index - 1].size), axis=0)
             else:
                 feature = np.concatenate((feature, [tile.entities[index - 1].val]), axis=0)
-        return [feature]
+        feature = feature/self.config_space_maximums
+        return [x for x in feature if x >= 0]
+
+    def discritize_action(self, action):
+        discreate_action = []
+        for act, dim in zip(action, self.actions_dims):
+            discreate_action.append(int(act*dim))
+        return discreate_action
 
     def next_batch(self, batch_size):
         actions, values = self.find_maximums()

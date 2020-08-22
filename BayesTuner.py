@@ -12,7 +12,7 @@ from MetaBO import MetaBO
 
 import multiprocessing
 
-__USE_METABO__ = False
+__USE_METABO__ = True
 
 ### The following macros are used to determine the structure of the system
 
@@ -200,7 +200,7 @@ class BayesianTuner(Tuner):
 
     def __init__(self,
                  task=None,
-                 training_interval=16,
+                 training_interval=1,
                  log_interval=50,
                  use_transfer_learning=False,
                  metric=None
@@ -275,7 +275,7 @@ class BayesianTuner(Tuner):
             self.xs = list(data[0])
             self.ys = list(data[1])
             self.flops_max = max(self.ys)
-            print(len(self.xs))
+            # print(len(self.xs))
 
         self.feature_map = None
 
@@ -287,11 +287,7 @@ class BayesianTuner(Tuner):
         indices = np.arange(np.prod(self.config_space_len))
 
         if __USE_METABO__:
-            # if self.bayesian_optimizer is None:
             self.bayesian_optimizer = MetaBO(config=self.task.config_space.space_map)
-            # else:
-            #     self.bayesian_optimizer = MetaBO(config=self.task.config_space.space_map,
-            #                                      PPOModel=self.bayesian_optimizer.get_base_model())
         elif not __USE_CPP_BACKEND__:
             self.feature_map = self.pool.map(_get_config, indices)
 
@@ -337,10 +333,9 @@ class BayesianTuner(Tuner):
                 self.flops_max = max(self.flops_max, flops)
                 self.ys.append(flops)
             else:
-                # self.xs.append(index)
-                # self.ys.append(0.0)
-                pass
+                # print(res.error_no)
                 ## TODO
+                pass
 
         xs_configurations = []
         update_size = len(self.xs)
@@ -405,7 +400,7 @@ def _get_config(index):
     config = _config_space.get(index).get_flatten_feature()
     if __compress_features__:
         return np.asarray(compress_config(config))
-    # config = config / _config_space_maximums
+    config = config / _config_space_maximums
     config = [x for x in config if x >= 0]
     return np.asarray(config)
 
